@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -81,43 +80,15 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Lite:   Android 10 o menor
-                // Normal: Android 11+
-
-                val modo = remember {
-                    val api = Build.VERSION.SDK_INT
-                    if (api <= Build.VERSION_CODES.Q) "lite" else "normal"
-                }
-
-                when (modo) {
-                    "normal" -> RelojPantallaNormal()
-                    "lite" -> RelojPantallaLite()
-                }
+                // Normal y Lite unificada
+                RelojPantalla()
             }
         }
     }
 }
 
 @Composable
-fun obtenerPorcentajeBateria(): Int {
-    val contexto = LocalContext.current
-    var bateria by remember { mutableStateOf(0) }
-
-    LaunchedEffect(Unit) {
-        val intent = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-        val batteryStatus = contexto.registerReceiver(null, intent)
-
-        val nivel = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
-        val escala = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-
-        bateria = ((nivel / escala.toFloat()) * 100).toInt()
-    }
-
-    return bateria
-}
-
-@Composable
-fun RelojPantallaNormal() {
+fun RelojPantalla() {
     var hora by remember { mutableStateOf("") }
     var minutos by remember { mutableStateOf("") }
     var segundos by remember { mutableStateOf("") }
@@ -125,7 +96,10 @@ fun RelojPantallaNormal() {
     var diaActual by remember { mutableStateOf("") }
     var fechaActual by remember { mutableStateOf("") }
 
-    val bateria = obtenerPorcentajeBateria()
+    // ⭐ Batería dinámica
+    var bateria by remember { mutableStateOf(0) }
+
+    val contexto = LocalContext.current
 
     // Detectar idioma
     val idioma = Locale.getDefault().language
@@ -164,7 +138,18 @@ fun RelojPantallaNormal() {
                 .format(ahora)
                 .replaceFirstChar { it.uppercase() }
 
-            fechaActual = SimpleDateFormat(formatoFecha, Locale.getDefault()).format(ahora)
+            fechaActual = SimpleDateFormat(formatoFecha, Locale.getDefault())
+                .format(ahora)
+                .replaceFirstChar { it.uppercase() }
+
+            // ⭐ Actualización de batería
+            val intent = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+            val batteryStatus = contexto.registerReceiver(null, intent)
+
+            val nivel = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+            val escala = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+
+            bateria = ((nivel / escala.toFloat()) * 100).toInt()
 
             delay(1000)
         }
@@ -335,241 +320,10 @@ fun RelojPantallaNormal() {
     }
 }
 
-@Composable
-fun RelojPantallaLite() {
-    var hora by remember { mutableStateOf("") }
-    var minutos by remember { mutableStateOf("") }
-    var segundos by remember { mutableStateOf("") }
-    var ampm by remember { mutableStateOf("") }
-    var diaActual by remember { mutableStateOf("") }
-    var fechaActual by remember { mutableStateOf("") }
-
-    val bateria = obtenerPorcentajeBateria()
-
-    // Detectar idioma
-    val idioma = Locale.getDefault().language
-    val esIngles = idioma == "en"
-
-    val formatoFecha = if (esIngles) "MM/dd/yyyy" else "dd/MM/yyyy"
-    val formatoDia = "EEEE"
-
-    // Colores cíclicos
-    val colores = listOf(
-        Color.Red, Color.Green, Color.White,
-        Color.Yellow, Color.Blue, Color.Magenta,
-        Color.Cyan, Color.Gray
-    )
-    var indiceColor by remember { mutableStateOf(0) }
-    val colorActual = colores[indiceColor]
-
-    val configuration = LocalConfiguration.current
-    val esVertical = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
-
-    // Actualización cada segundo
-    LaunchedEffect(Unit) {
-        while (true) {
-            val ahora = Calendar.getInstance().time
-
-            hora = SimpleDateFormat("hh", Locale.getDefault()).format(ahora)
-            minutos = SimpleDateFormat("mm", Locale.getDefault()).format(ahora)
-            segundos = SimpleDateFormat("ss", Locale.getDefault()).format(ahora)
-
-            ampm = SimpleDateFormat("a", Locale.getDefault()).format(ahora)
-            ampm = ampm.uppercase()
-            ampm = ampm.replace(".","")
-            ampm = ampm.replace(" ","")
-
-            diaActual = SimpleDateFormat(formatoDia, Locale.getDefault())
-                .format(ahora)
-                .replaceFirstChar { it.uppercase() }
-
-            fechaActual = SimpleDateFormat(formatoFecha, Locale.getDefault()).format(ahora)
-
-            delay(1000)
-        }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .padding(20.dp)
-            .clickable {
-                indiceColor = (indiceColor + 1) % colores.size
-            }
-    ) {
-        if (esVertical) {
-
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(top = 10.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-
-                // ⭐ FECHA IZQUIERDA — BATERÍA DERECHA
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = diaActual,
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = colorActual
-                    )
-
-                    Text(
-                        text = "$bateria%",
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = colorActual
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // ⭐ DÍA CENTRADO
-                Text(
-                    text = fechaActual,
-                    fontSize = 34.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = colorActual,
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                // ⭐ HORA EN TRES LÍNEAS
-                Text(
-                    text = hora,
-                    fontSize = 140.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                    color = colorActual
-                )
-
-                Text(
-                    text = minutos,
-                    fontSize = 120.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                    color = colorActual
-                )
-
-                Text(
-                    text = segundos,
-                    fontSize = 100.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                    color = colorActual
-                )
-
-                // ⭐ AM/PM
-                Text(
-                    text = ampm,
-                    fontSize = 60.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace,
-                    color = colorActual
-                )
-
-                Spacer(modifier = Modifier.weight(1f))
-            }
-        } else {
-
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-
-                // ⭐ DÍA IZQUIERDA — FECHA CENTRO — BATERÍA DERECHA
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 10.dp, start = 10.dp, end = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-
-                    // Día (izquierda)
-                    Text(
-                        text = diaActual,
-                        fontSize = 34.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = colorActual,
-                        modifier = Modifier.weight(1f),
-                        textAlign = TextAlign.Start
-                    )
-
-                    // Fecha (centro)
-                    Text(
-                        text = fechaActual,
-                        fontSize = 34.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = colorActual,
-                        modifier = Modifier.weight(1f),
-                        textAlign = TextAlign.Center
-                    )
-
-                    // Batería (derecha)
-                    Text(
-                        text = "$bateria%",
-                        fontSize = 34.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = colorActual,
-                        modifier = Modifier.weight(1f),
-                        textAlign = TextAlign.End
-                    )
-                }
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                // Hora centrada
-                Text(
-                    text = "$hora:$minutos:$segundos",
-                    fontSize = 140.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                    color = colorActual,
-                    textAlign = TextAlign.Center
-                )
-
-                // AM/PM centrado
-                Text(
-                    text = ampm,
-                    fontSize = 60.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace,
-                    color = colorActual,
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.weight(1f))
-            }
-        }
-    }
-}
-
 @Preview(showBackground = true)
 @Composable
 fun RelojPantallaPreview() {
     WatchHomeTheme {
-        // ⭐ Detección automática del modo
-        val modo = remember {
-            val api = Build.VERSION.SDK_INT
-
-            when {
-                api <= Build.VERSION_CODES.Q -> "lite"   // Android 10 o menor
-                else -> "normal"                         // Android 11+
-            }
-        }
-
-        when (modo) {
-            "normal" -> RelojPantallaNormal()
-            "lite" -> RelojPantallaLite()
-        }
+        RelojPantalla()
     }
 }
