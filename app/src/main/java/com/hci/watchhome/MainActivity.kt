@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,7 +77,7 @@ class MainActivity : ComponentActivity() {
                                     View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
                                     View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
 
-                        delay(250) // Reaplicar 4 veces por segundo
+                        delay(1000) // Reaplicar 1 vez por segundo
                     }
                 }
 
@@ -89,17 +90,20 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun RelojPantalla() {
+
     var hora by remember { mutableStateOf("") }
     var minutos by remember { mutableStateOf("") }
     var segundos by remember { mutableStateOf("") }
     var ampm by remember { mutableStateOf("") }
+
     var diaActual by remember { mutableStateOf("") }
     var fechaActual by remember { mutableStateOf("") }
 
-    // ⭐ Batería dinámica
+    // ⭐ Batería dinámica optimizada
     var bateria by remember { mutableStateOf(0) }
 
     val contexto = LocalContext.current
+    val actividad = LocalContext.current as ComponentActivity
 
     // Detectar idioma
     val idioma = Locale.getDefault().language
@@ -120,20 +124,25 @@ fun RelojPantalla() {
     val configuration = LocalConfiguration.current
     val esVertical = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
 
-    // Actualización cada segundo
+    // ⭐ Actualización optimizada: hora cada 1s, batería cada 30s
     LaunchedEffect(Unit) {
+        var contadorBateria = 0
+
         while (true) {
             val ahora = Calendar.getInstance().time
 
+            // Hora
             hora = SimpleDateFormat("hh", Locale.getDefault()).format(ahora)
             minutos = SimpleDateFormat("mm", Locale.getDefault()).format(ahora)
             segundos = SimpleDateFormat("ss", Locale.getDefault()).format(ahora)
 
-            ampm = SimpleDateFormat("a", Locale.getDefault()).format(ahora)
-            ampm = ampm.uppercase()
-            ampm = ampm.replace(".","")
-            ampm = ampm.replace(" ","")
+            ampm = SimpleDateFormat("a", Locale.getDefault())
+                .format(ahora)
+                .uppercase()
+                .replace(".", "")
+                .replace(" ", "")
 
+            // Fecha
             diaActual = SimpleDateFormat(formatoDia, Locale.getDefault())
                 .format(ahora)
                 .replaceFirstChar { it.uppercase() }
@@ -142,29 +151,46 @@ fun RelojPantalla() {
                 .format(ahora)
                 .replaceFirstChar { it.uppercase() }
 
-            // ⭐ Actualización de batería
-            val intent = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-            val batteryStatus = contexto.registerReceiver(null, intent)
+            // ⭐ Actualizar batería cada 30 segundos
+            if (contadorBateria % 30 == 0) {
+                val intent = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+                val batteryStatus = contexto.registerReceiver(null, intent)
 
-            val nivel = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
-            val escala = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+                val nivel = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                val escala = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
 
-            bateria = ((nivel / escala.toFloat()) * 100).toInt()
+                bateria = ((nivel / escala.toFloat()) * 100).toInt()
+            }
 
+            contadorBateria++
             delay(1000)
         }
     }
 
+    // ⭐ Ahorro de energía automático (batería ≤ 20%)
+    SideEffect {
+        val lp = actividad.window.attributes
+
+        lp.screenBrightness = if (bateria <= 20) {
+            0.50f   // ⭐ Modo ahorro
+        } else {
+            0.85f   // ⭐ Brillo normal
+        }
+
+        actividad.window.attributes = lp
+    }
+
+    // ⭐ UI
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black) // Fondo de pantalla negra
+            .background(Color.Black)
             .padding(20.dp)
             .clickable {
-                // Cambiar color con un toque
                 indiceColor = (indiceColor + 1) % colores.size
             }
     ) {
+
         if (esVertical) {
 
             Column(
@@ -174,7 +200,7 @@ fun RelojPantalla() {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
 
-                // ⭐ FECHA IZQUIERDA — BATERÍA DERECHA
+                // ⭐ DÍA IZQUIERDA — BATERÍA DERECHA
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -199,7 +225,7 @@ fun RelojPantalla() {
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // ⭐ DÍA CENTRADO
+                // ⭐ FECHA CENTRADA
                 Text(
                     text = fechaActual,
                     fontSize = 34.sp,
@@ -210,7 +236,7 @@ fun RelojPantalla() {
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                // ⭐ HORA EN TRES LÍNEAS
+                // ⭐ HORA
                 Text(
                     text = hora,
                     fontSize = 140.sp,
@@ -218,7 +244,6 @@ fun RelojPantalla() {
                     fontFamily = FontFamily.Monospace,
                     color = colorActual
                 )
-
                 Text(
                     text = minutos,
                     fontSize = 120.sp,
@@ -227,15 +252,17 @@ fun RelojPantalla() {
                     color = colorActual
                 )
 
-                Text(
-                    text = segundos,
-                    fontSize = 100.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                    color = colorActual
-                )
+                // ⭐ Ocultar segundos cuando batería ≤ 10%
+                if (bateria > 10) {
+                    Text(
+                        text = segundos,
+                        fontSize = 100.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = FontFamily.Monospace,
+                        color = colorActual
+                    )
+                }
 
-                // ⭐ AM/PM
                 Text(
                     text = ampm,
                     fontSize = 60.sp,
@@ -246,6 +273,7 @@ fun RelojPantalla() {
 
                 Spacer(modifier = Modifier.weight(1f))
             }
+
         } else {
 
             Column(
@@ -261,7 +289,6 @@ fun RelojPantalla() {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
 
-                    // Día (izquierda)
                     Text(
                         text = diaActual,
                         fontSize = 34.sp,
@@ -271,7 +298,6 @@ fun RelojPantalla() {
                         textAlign = TextAlign.Start
                     )
 
-                    // Fecha (centro)
                     Text(
                         text = fechaActual,
                         fontSize = 34.sp,
@@ -281,7 +307,6 @@ fun RelojPantalla() {
                         textAlign = TextAlign.Center
                     )
 
-                    // Batería (derecha)
                     Text(
                         text = "$bateria%",
                         fontSize = 34.sp,
@@ -294,24 +319,21 @@ fun RelojPantalla() {
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                // Hora centrada
+                // ⭐ Ocultar segundos cuando batería ≤ 10%
                 Text(
-                    text = "$hora:$minutos:$segundos",
+                    text = if (bateria > 10) "$hora:$minutos:$segundos" else "$hora:$minutos",
                     fontSize = 140.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
-                    color = colorActual,
-                    textAlign = TextAlign.Center
+                    color = colorActual
                 )
 
-                // AM/PM centrado
                 Text(
                     text = ampm,
                     fontSize = 60.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
-                    color = colorActual,
-                    textAlign = TextAlign.Center
+                    color = colorActual
                 )
 
                 Spacer(modifier = Modifier.weight(1f))
